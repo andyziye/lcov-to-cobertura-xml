@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# -*- coding: utf-8 -*-
 
 # Copyright 2011-2022 Eric Wendelin
 #
@@ -8,7 +9,7 @@
 """
 Converts lcov line coverage output to Cobertura-compatible XML for CI
 """
-
+import copy
 import re
 import sys
 import os
@@ -122,10 +123,6 @@ class LcovCobertura():
             if line.strip() == 'end_of_record':
                 if current_file is not None:
                     package_dict = coverage_data['packages'][package]
-                    package_dict['lines-total'] += file_lines_total
-                    package_dict['lines-covered'] += file_lines_covered
-                    package_dict['branches-total'] += file_branches_total
-                    package_dict['branches-covered'] += file_branches_covered
                     file_dict = package_dict['classes'][current_file]
                     file_dict['lines-total'] = file_lines_total
                     file_dict['lines-covered'] = file_lines_covered
@@ -133,10 +130,6 @@ class LcovCobertura():
                     file_dict['methods'] = dict(file_methods)
                     file_dict['branches-total'] = file_branches_total
                     file_dict['branches-covered'] = file_branches_covered
-                    coverage_data['summary']['lines-total'] += file_lines_total
-                    coverage_data['summary']['lines-covered'] += file_lines_covered
-                    coverage_data['summary']['branches-total'] += file_branches_total
-                    coverage_data['summary']['branches-covered'] += file_branches_covered
 
             line_parts = line.split(':', 1)
             input_type = line_parts[0]
@@ -152,20 +145,35 @@ class LcovCobertura():
                         'classes': {}, 'lines-total': 0, 'lines-covered': 0,
                         'branches-total': 0, 'branches-covered': 0
                     }
-                coverage_data['packages'][package]['classes'][
-                    relative_file_name] = {
+
+                if relative_file_name in coverage_data['packages'][package]['classes']:
+                    # previous file cov already exist in dict
+                    old_file_info_dict = coverage_data['packages'][package]['classes'][relative_file_name]
+
+                    package = package
+                    current_file = relative_file_name
+                    file_lines_total = old_file_info_dict['lines-total']
+                    file_lines_covered = old_file_info_dict['lines-covered']
+                    file_lines = copy.deepcopy(old_file_info_dict['lines'])
+                    file_methods = copy.deepcopy(old_file_info_dict['methods'])
+                    file_branches_total = old_file_info_dict['branches-total']
+                    file_branches_covered = old_file_info_dict['branches-covered']
+                else:
+                    coverage_data['packages'][package]['classes'][relative_file_name] = {
                         'name': class_name, 'lines': {}, 'lines-total': 0,
                         'lines-covered': 0, 'branches-total': 0,
                         'branches-covered': 0
-                }
-                package = package
-                current_file = relative_file_name
-                file_lines_total = 0
-                file_lines_covered = 0
-                file_lines.clear()
-                file_methods.clear()
-                file_branches_total = 0
-                file_branches_covered = 0
+                    }
+
+                    package = package
+                    current_file = relative_file_name
+                    file_lines_total = 0
+                    file_lines_covered = 0
+                    file_lines.clear()
+                    file_methods.clear()
+                    file_branches_total = 0
+                    file_branches_covered = 0
+
             elif input_type == 'DA':
                 # DA:2,0
                 (line_number, line_hits) = line_parts[-1].strip().split(',')[:2]
@@ -173,16 +181,19 @@ class LcovCobertura():
                 if line_number not in file_lines:
                     file_lines[line_number] = {
                         'branch': 'false', 'branches-total': 0,
-                        'branches-covered': 0
+                        'branches-covered': 0, 'hits': '0'
                     }
-                file_lines[line_number]['hits'] = line_hits
+                    file_lines_total += 1
+
                 # Increment lines total/covered for class and package
                 try:
-                    if int(line_hits) > 0:
+                    if int(file_lines[line_number]['hits']) == 0 and int(line_hits) > 0:
                         file_lines_covered += 1
+                    file_lines[line_number]['hits'] = int(file_lines[line_number]['hits']) + int(line_hits)
                 except ValueError:
+                    print(f"Error set line_number.hit for {package} {current_file}:{line_number}")
                     pass
-                file_lines_total += 1
+
             elif input_type == 'BRDA':
                 # BRDA:1,1,2,0
                 (line_number, block_number, branch_number, branch_hits) = line_parts[-1].strip().split(',')
@@ -205,19 +216,35 @@ class LcovCobertura():
             elif input_type == 'FN':
                 # FN:5,(anonymous_1)
                 function_line, function_name = line_parts[-1].strip().split(',', 1)
-                file_methods[function_name] = [function_line, '0']
+
+                if function_name not in file_methods:
+                    file_methods[function_name] = [function_line, '0']
             elif input_type == 'FNDA':
                 # FNDA:0,(anonymous_1)
                 (function_hits, function_name) = line_parts[-1].strip().split(',', 1)
                 if function_name not in file_methods:
                     file_methods[function_name] = ['0', '0']
-                file_methods[function_name][-1] = function_hits
+
+                file_methods[function_name][-1] = str(int(function_hits) + int(file_methods[function_name][-1]))
 
         # Exclude packages
         excluded = [x for x in coverage_data['packages'] for e in self.excludes
                     if re.match(e, x)]
         for package in excluded:
             del coverage_data['packages'][package]
+
+        # count
+        for package, package_dict in coverage_data['packages'].items():
+            for file_dict in package_dict['classes'].values():
+                package_dict['lines-total'] += file_dict['lines-total']
+                package_dict['lines-covered'] += file_dict['lines-covered']
+                package_dict['branches-total'] += file_dict['branches-total']
+                package_dict['branches-covered'] += file_dict['branches-covered']
+
+            coverage_data['summary']['lines-total'] += package_dict['lines-total']
+            coverage_data['summary']['lines-covered'] += package_dict['lines-covered']
+            coverage_data['summary']['branches-total'] += package_dict['branches-total']
+            coverage_data['summary']['branches-covered'] += package_dict['branches-covered']
 
         # Compute line coverage rates
         for package_data in list(coverage_data['packages'].values()):
@@ -228,6 +255,22 @@ class LcovCobertura():
                 package_data['branches-total'],
                 package_data['branches-covered'])
 
+        # info
+        print("::group::Cov Details:")
+        for package, package_dict in coverage_data['packages'].items():
+            print("=" * 100)
+            print(f'{package:<90}... {round(float(package_dict["line-rate"]) * 100, 2):>5}%')
+            print("-" * 100)
+
+            for file, file_dict in package_dict['classes'].items():
+                file_percent = self._percent(file_dict['lines-total'], file_dict['lines-covered'])
+                print(f'\t- {file:<72}  {round(float(file_percent) * 100, 2):>5}% ({file_dict["lines-covered"]:>3}/{file_dict["lines-total"]:<3})')
+        print("::endgroup::")
+        print('-' * 20)
+        print(f"TOTAL    : {coverage_data['summary']['lines-total']}")
+        print(f"COV      : {coverage_data['summary']['lines-covered']}")
+        print(f"PERCENT  : {round(float(self._percent(coverage_data['summary']['lines-total'], coverage_data['summary']['lines-covered'])) * 100, 2)}%")
+        print('-' * 20)
         return coverage_data
 
     def generate_cobertura_xml(self, coverage_data, **kwargs):
