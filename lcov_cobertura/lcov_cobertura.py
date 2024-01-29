@@ -181,7 +181,8 @@ class LcovCobertura():
                 if line_number not in file_lines:
                     file_lines[line_number] = {
                         'branch': 'false', 'branches-total': 0,
-                        'branches-covered': 0, 'hits': '0'
+                        'branches-covered': 0, 'hits': '0',
+                        'branches-hit-dict': {}
                     }
                     file_lines_total += 1
 
