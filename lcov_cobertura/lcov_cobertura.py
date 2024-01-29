@@ -198,17 +198,26 @@ class LcovCobertura():
                 # BRDA:1,1,2,0
                 (line_number, block_number, branch_number, branch_hits) = line_parts[-1].strip().split(',')
                 line_number = int(line_number)
+                branch_hits = 0 if branch_hits == '-' else int(branch_hits)
                 if line_number not in file_lines:
                     file_lines[line_number] = {
                         'branch': 'true', 'branches-total': 0,
-                        'branches-covered': 0, 'hits': 0
+                        'branches-covered': 0, 'hits': 0,
+                        'branches-hit-dict': {}
                     }
                 file_lines[line_number]['branch'] = 'true'
-                file_lines[line_number]['branches-total'] += 1
-                file_branches_total += 1
-                if branch_hits != '-' and int(branch_hits) > 0:
-                    file_lines[line_number]['branches-covered'] += 1
-                    file_branches_covered += 1
+                branches_hit_dict: dict = file_lines[line_number]['branches-hit-dict']
+
+                if branch_number not in branches_hit_dict:
+                    branches_hit_dict[branch_number] = False
+                    file_lines[line_number]['branches-total'] += 1
+
+                if branch_hits > 0:
+                    if not branches_hit_dict[branch_number]:
+                        file_branches_covered += 1
+                        file_lines[line_number]['branches-covered'] += 1
+                        branches_hit_dict[branch_number] = True
+
             elif input_type == 'BRF':
                 file_branches_total = int(line_parts[1])
             elif input_type == 'BRH':
@@ -362,10 +371,12 @@ class LcovCobertura():
                     if class_data['lines'][line_number]['branch'] == 'true':
                         total = int(class_data['lines'][line_number]['branches-total'])
                         covered = int(class_data['lines'][line_number]['branches-covered'])
+                        hits = int(class_data['lines'][line_number]['hits'])
                         percentage = int((covered * 100.0) / total)
                         line_el.setAttribute('condition-coverage',
                                              '{0}% ({1}/{2})'.format(
                                                  percentage, covered, total))
+                        # print(f'{line_number}: {percentage:>3}%({covered:>2}/{total:<2})')
                     lines_el.appendChild(line_el)
 
                 class_el.appendChild(methods_el)
