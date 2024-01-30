@@ -124,12 +124,12 @@ class LcovCobertura():
                 if current_file is not None:
                     package_dict = coverage_data['packages'][package]
                     file_dict = package_dict['classes'][current_file]
-                    file_dict['lines-total'] = file_lines_total
-                    file_dict['lines-covered'] = file_lines_covered
+                    file_dict['lines-total'] = len(file_lines)
+                    file_dict['lines-covered'] = len(list(filter(lambda x: x['hits'] > 0, file_lines.values())))
                     file_dict['lines'] = dict(file_lines)
                     file_dict['methods'] = dict(file_methods)
-                    file_dict['branches-total'] = file_branches_total
-                    file_dict['branches-covered'] = file_branches_covered
+                    file_dict['branches-total'] = sum(list(x['branches-total'] for x in file_lines.values()))
+                    file_dict['branches-covered'] = sum(list(x['branches-covered'] for x in file_lines.values()))
 
             line_parts = line.split(':', 1)
             input_type = line_parts[0]
@@ -137,6 +137,7 @@ class LcovCobertura():
             if input_type == 'SF':
                 # Get file name
                 file_name = line_parts[-1].strip()
+
                 relative_file_name = os.path.relpath(file_name, self.base_dir)
                 package = '.'.join(relative_file_name.split(os.path.sep)[0:-1])
                 class_name = '.'.join(relative_file_name.split(os.path.sep))
@@ -206,6 +207,7 @@ class LcovCobertura():
                         'branches-covered': 0, 'hits': 0,
                         'branches-hit-dict': {}
                     }
+
                 file_lines[line_number]['branch'] = 'true'
                 branches_hit_dict: dict = file_lines[line_number]['branches-hit-dict']
 
@@ -266,21 +268,21 @@ class LcovCobertura():
                 package_data['branches-covered'])
 
         # info
-        print("::group::Cov Details:")
-        for package, package_dict in coverage_data['packages'].items():
-            print("=" * 100)
-            print(f'{package:<90}... {round(float(package_dict["line-rate"]) * 100, 2):>5}%')
-            print("-" * 100)
-
-            for file, file_dict in package_dict['classes'].items():
-                file_percent = self._percent(file_dict['lines-total'], file_dict['lines-covered'])
-                print(f'\t- {file:<72}  {round(float(file_percent) * 100, 2):>5}% ({file_dict["lines-covered"]:>3}/{file_dict["lines-total"]:<3})')
-        print("::endgroup::")
-        print('-' * 20)
-        print(f"TOTAL    : {coverage_data['summary']['lines-total']}")
-        print(f"COV      : {coverage_data['summary']['lines-covered']}")
-        print(f"PERCENT  : {round(float(self._percent(coverage_data['summary']['lines-total'], coverage_data['summary']['lines-covered'])) * 100, 2)}%")
-        print('-' * 20)
+        # print("::group::Cov Details:")
+        # for package, package_dict in coverage_data['packages'].items():
+        #     print("=" * 100)
+        #     print(f'{package:<90}... {round(float(package_dict["line-rate"]) * 100, 2):>5}%')
+        #     print("-" * 100)
+        #
+        #     for file, file_dict in package_dict['classes'].items():
+        #         file_percent = self._percent(file_dict['lines-total'], file_dict['lines-covered'])
+        #         print(f'\t- {file:<72}  {round(float(file_percent) * 100, 2):>5}% ({file_dict["lines-covered"]:>3}/{file_dict["lines-total"]:<3})')
+        # print("::endgroup::")
+        # print('-' * 20)
+        # print(f"TOTAL    : {coverage_data['summary']['lines-total']}")
+        # print(f"COV      : {coverage_data['summary']['lines-covered']}")
+        # print(f"PERCENT  : {round(float(self._percent(coverage_data['summary']['lines-total'], coverage_data['summary']['lines-covered'])) * 100, 2)}%")
+        # print('-' * 20)
         return coverage_data
 
     def generate_cobertura_xml(self, coverage_data, **kwargs):
